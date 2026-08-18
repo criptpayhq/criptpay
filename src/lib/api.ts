@@ -2,7 +2,7 @@ import axios from "axios";
 
 const API_BASE_URL = import.meta.env.DEV
   ? "http://localhost:8000"
-  : "https://criptpay-f2lv.onrender.com";
+  : "https://criptpayapi.smspadi.com";
 
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
