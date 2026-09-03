@@ -132,22 +132,16 @@ const Dashboard = () => {
   const [txHash, setTxHash] = useState("");
   const [isConfirming, setIsConfirming] = useState(false);
 
-  // Withdrawal State
-  const [withdrawalAddress, setWithdrawalAddress] = useState("");
-  const [withdrawalAsset, setWithdrawalAsset] = useState("base:usdc");
-  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
-  const [isWithdrawing, setIsWithdrawing] = useState(false);
-  const [developerFees, setDeveloperFees] = useState<{
-    amount: number;
-    currency: string;
-  } | null>(null);
-  const [loadingFees, setLoadingFees] = useState(false);
-  const [withdrawalResult, setWithdrawalResult] = useState<any>(null);
-  const [withdrawalHistory, setWithdrawalHistory] = useState<any[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
   const [developerFee, setDeveloperFee] = useState<number | string>(0);
   const [isSavingFee, setIsSavingFee] = useState(false);
   const [isLoadingFee, setIsLoadingFee] = useState(false);
+
+  // Wallet address states
+  const [walletEth, setWalletEth] = useState("");
+  const [walletSol, setWalletSol] = useState("");
+  const [walletTron, setWalletTron] = useState("");
+  const [isSavingWallets, setIsSavingWallets] = useState(false);
+  const [isLoadingWallets, setIsLoadingWallets] = useState(false);
 
   const openConfirmDialog = (tx: Transaction) => {
     setSelectedTx(tx);
@@ -183,88 +177,6 @@ const Dashboard = () => {
     }
   };
 
-  const openWithdrawConfirm = () => {
-    if (!withdrawalAddress.trim()) {
-      toast.error("Please enter a beneficiary wallet address");
-      return;
-    }
-
-    if (!/^0x[a-fA-F0-9]{40}$/.test(withdrawalAddress.trim())) {
-      toast.error(
-        "Invalid wallet address format. Please enter a valid Ethereum address (0x...)",
-      );
-      return;
-    }
-
-    setIsWithdrawOpen(true);
-  };
-
-  const handleConfirmWithdraw = async () => {
-    setIsWithdrawing(true);
-    try {
-      const res = await api.post("/developer/withdraw", {
-        asset: withdrawalAsset,
-        wallet_address: withdrawalAddress.trim(),
-      });
-
-      if (res.data && res.data.success) {
-        toast.success(
-          res.data.message || "Fee withdrawal initiated successfully",
-        );
-        setWithdrawalResult(res.data.data);
-        setIsWithdrawOpen(false);
-        setWithdrawalAddress("");
-        // Refresh fees after successful withdrawal
-        setTimeout(() => fetchDeveloperFees(), 2000);
-      } else {
-        toast.error(res.data.message || "Withdrawal failed");
-      }
-    } catch (error: any) {
-      console.error("Withdraw error:", error);
-      toast.error(
-        error.response?.data?.message || error.message || "Withdrawal failed",
-      );
-    } finally {
-      setIsWithdrawing(false);
-    }
-  };
-
-  const fetchDeveloperFees = async () => {
-    setLoadingFees(true);
-    try {
-      const res = await api.get("/developer/fees");
-      if (res.data && res.data.success) {
-        setDeveloperFees(res.data.data);
-      } else {
-        toast.error(res.data.message || "Failed to fetch developer fees");
-      }
-    } catch (error: any) {
-      console.error("Error fetching fees:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to fetch developer fees",
-      );
-    } finally {
-      setLoadingFees(false);
-    }
-  };
-
-  const fetchWithdrawalHistory = async () => {
-    setLoadingHistory(true);
-    try {
-      const res = await api.get("/developer/withdrawals");
-      if (res.data && res.data.success) {
-        setWithdrawalHistory(res.data.data);
-      }
-    } catch (error: any) {
-      console.error("Error fetching withdrawal history:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to fetch withdrawal history",
-      );
-    } finally {
-      setLoadingHistory(false);
-    }
-  };
-
   const fetchDeveloperFee = async () => {
     setIsLoadingFee(true);
     try {
@@ -277,6 +189,42 @@ const Dashboard = () => {
       toast.error("Failed to fetch developer fee");
     } finally {
       setIsLoadingFee(false);
+    }
+  };
+
+  const fetchWalletAddresses = async () => {
+    setIsLoadingWallets(true);
+    try {
+      const [ethRes, solRes, tronRes] = await Promise.all([
+        api.get("/settings/developer_recipient_eth"),
+        api.get("/settings/developer_recipient_sol"),
+        api.get("/settings/developer_recipient_tron"),
+      ]);
+      if (ethRes.data.success) setWalletEth(ethRes.data.value || "");
+      if (solRes.data.success) setWalletSol(solRes.data.value || "");
+      if (tronRes.data.success) setWalletTron(tronRes.data.value || "");
+    } catch (error) {
+      console.error("Error fetching wallet addresses:", error);
+      toast.error("Failed to fetch wallet addresses");
+    } finally {
+      setIsLoadingWallets(false);
+    }
+  };
+
+  const handleSaveWalletAddresses = async () => {
+    setIsSavingWallets(true);
+    try {
+      await Promise.all([
+        api.put("/settings/developer_recipient_eth", { value: walletEth || null }),
+        api.put("/settings/developer_recipient_sol", { value: walletSol || null }),
+        api.put("/settings/developer_recipient_tron", { value: walletTron || null }),
+      ]);
+      toast.success("Wallet addresses updated successfully");
+    } catch (error: any) {
+      console.error("Error saving wallet addresses:", error);
+      toast.error(error.response?.data?.message || "Failed to update wallet addresses");
+    } finally {
+      setIsSavingWallets(false);
     }
   };
 
@@ -358,14 +306,9 @@ const Dashboard = () => {
 
   // Fetch developer fees when withdrawal tab is opened
   useEffect(() => {
-    if (activeTab === "withdrawal" && !developerFees) {
-      fetchDeveloperFees();
-    }
-    if (activeTab === "withdrawal-history") {
-      fetchWithdrawalHistory();
-    }
     if (activeTab === "settings") {
       fetchDeveloperFee();
+      fetchWalletAddresses();
     }
   }, [activeTab]);
 
@@ -563,20 +506,7 @@ const Dashboard = () => {
                 {tab}
               </button>
             ))}
-            {["withdrawal", "withdrawal-history"].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={cn(
-                  "px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 capitalize",
-                  activeTab === tab
-                    ? "bg-white dark:bg-gray-800 text-black dark:text-white shadow-sm"
-                    : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-300",
-                )}
-              >
-                {tab.replace("-", " ")}
-              </button>
-            ))}
+
           </div>
 
           {activeTab === "users" && (
@@ -655,385 +585,73 @@ const Dashboard = () => {
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
 
-          {activeTab === "withdrawal" && (
-            <div className="mb-8">
-              <div className="mb-8">
-                <h1 className="text-3xl font-bold text-foreground mb-2">
-                  Withdraw Developer Fees
-                </h1>
-                <p className="text-muted-foreground">
-                  Withdraw fees. The fees are withdrawn from pending fee sweeps.
-                </p>
-              </div>
-
-              {/* Fees Display Card - Full Width */}
-              <Card className="bg-white/50 dark:bg-gray-900/50 backdrop-blur border-black/10 dark:border-white/10 mb-6">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-base font-semibold">
-                    Balance
-                  </CardTitle>
-                  <Button
-                    onClick={fetchDeveloperFees}
-                    disabled={loadingFees}
-                    variant="outline"
-                    size="sm"
-                    className="flex items-center gap-1"
-                  >
-                    {loadingFees ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="w-4 h-4" />
-                        Refresh
-                      </>
-                    )}
-                  </Button>
-                </CardHeader>
-                <CardContent>
-                  {loadingFees ? (
-                    <div className="flex items-center gap-2 py-4">
-                      <Loader2 className="w-5 h-5 animate-spin text-[#b1f128]" />
-                      <span className="text-sm text-muted-foreground">
-                        Loading fees...
-                      </span>
-                    </div>
-                  ) : developerFees ? (
-                    <div className="py-2">
-                      <div className="text-4xl font-bold text-foreground">
-                        {developerFees.amount.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </div>
-                      <div className="text-sm text-muted-foreground mt-1">
-                        {developerFees.currency}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-muted-foreground py-4">
-                      No fees data available. Click refresh to load.
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Withdrawal Result Card (shown after successful withdrawal) */}
-              {withdrawalResult && (
-                <Card className="bg-white/50 dark:bg-gray-900/50 backdrop-blur border-[#b1f128]/30 dark:border-[#b1f128]/20 border-2 mb-6">
-                  <CardHeader>
-                    <CardTitle className="text-base font-semibold text-[#b1f128]">
-                      ✓ Withdrawal Initiated Successfully
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div>
-                      <div className="text-xs text-muted-foreground font-semibold mb-1">
-                        TRANSACTION HASH
-                      </div>
-                      <div className="font-mono text-xs break-all text-foreground bg-muted p-2 rounded">
-                        {withdrawalResult.hash || "N/A"}
-                      </div>
-                    </div>
-                    {withdrawalResult.explorer_url && (
-                      <a
-                        href={withdrawalResult.explorer_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-sm text-[#b1f128] font-semibold hover:opacity-80 transition"
-                      >
-                        View on Block Explorer →
-                      </a>
-                    )}
-                    <div className="pt-2 border-t border-black/10 dark:border-white/10">
-                      <div className="text-xs text-muted-foreground font-semibold mb-1">
-                        AMOUNT WITHDRAWN
-                      </div>
-                      <div className="text-2xl font-bold text-foreground">
-                        {withdrawalResult.amount?.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}{" "}
-                        USD
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Withdrawal Form */}
-              <Card className="bg-white/50 dark:bg-gray-900/50 backdrop-blur border-black/10 dark:border-white/10">
+              <Card className="max-w-2xl bg-white/50 dark:bg-gray-900/50 backdrop-blur border-black/10 dark:border-white/10 mt-6">
                 <CardHeader>
-                  <CardTitle className="text-base font-semibold">
-                    Initiate Withdrawal
-                  </CardTitle>
+                  <CardTitle>Fee Recipient Wallet Addresses</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-6">
+                  <p className="text-sm text-muted-foreground">
+                    Configure wallet addresses where developer fees will be automatically sent after each offramp transaction completes.
+                  </p>
+                  
                   <div className="space-y-4">
-                    {/* Asset Selector */}
-                    <div>
-                      <Label
-                        htmlFor="withdraw-asset"
-                        className="text-sm font-semibold mb-2"
-                      >
-                        Select Asset
-                      </Label>
-                      <select
-                        id="withdraw-asset"
-                        value={withdrawalAsset}
-                        onChange={(e) => setWithdrawalAsset(e.target.value)}
-                        className="w-full px-3 py-2 rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-[#b1f128] focus:ring-offset-0"
-                      >
-                        <optgroup label="Base Network">
-                          <option value="base:usdc">BASE - USDC</option>
-                          <option value="base:usdt">BASE - USDT</option>
-                        </optgroup>
-                        <optgroup label="Ethereum Network">
-                          <option value="ethereum:usdc">Ethereum - USDC</option>
-                          <option value="ethereum:usdt">Ethereum - USDT</option>
-                        </optgroup>
-                        <optgroup label="Solana Network">
-                          <option value="solana:usdc">Solana - USDC</option>
-                          <option value="solana:usdt">Solana - USDT</option>
-                        </optgroup>
-                        <optgroup label="Polygon Network">
-                          <option value="polygon:usdc">Polygon - USDC</option>
-                          <option value="polygon:usdt">Polygon - USDT</option>
-                        </optgroup>
-                        <optgroup label="Arbitrum Network">
-                          <option value="arbitrum:usdc">Arbitrum - USDC</option>
-                          <option value="arbitrum:usdt">Arbitrum - USDT</option>
-                        </optgroup>
-                        <optgroup label="Optimism Network">
-                          <option value="optimism:usdc">Optimism - USDC</option>
-                          <option value="optimism:usdt">Optimism - USDT</option>
-                        </optgroup>
-                        <optgroup label="Avalanche Network">
-                          <option value="avalanche:usdc">
-                            Avalanche - USDC
-                          </option>
-                          <option value="avalanche:usdt">
-                            Avalanche - USDT
-                          </option>
-                        </optgroup>
-                        <optgroup label="BSC Network">
-                          <option value="bsc:usdc">BSC - USDC</option>
-                          <option value="bsc:usdt">BSC - USDT</option>
-                        </optgroup>
-                        <optgroup label="Tron Network">
-                          <option value="tron:usdt">Tron - USDT</option>
-                        </optgroup>
-                      </select>
-                    </div>
-
-                    {/* Wallet Address Input */}
-                    <div>
-                      <Label
-                        htmlFor="withdraw-address"
-                        className="text-sm font-semibold mb-2"
-                      >
-                        Beneficiary Wallet Address
+                    <div className="space-y-2">
+                      <Label htmlFor="wallet-eth">
+                        Ethereum / EVM Wallet (Base, ETH, Polygon, Arbitrum, Optimism, Avalanche, BSC)
                       </Label>
                       <Input
-                        id="withdraw-address"
-                        placeholder="0x1234567890123456789012345678901234567890"
-                        value={withdrawalAddress}
-                        onChange={(e) => setWithdrawalAddress(e.target.value)}
-                        className="font-mono text-sm focus:ring-[#b1f128]"
+                        id="wallet-eth"
+                        placeholder="0x..."
+                        value={walletEth}
+                        onChange={(e) => setWalletEth(e.target.value)}
+                        className="font-mono text-sm"
                       />
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Enter a valid Ethereum-compatible wallet address
-                      </p>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex gap-3 pt-2">
-                      <Button
-                        onClick={openWithdrawConfirm}
-                        disabled={isWithdrawing || !withdrawalAddress.trim()}
-                        className="flex-1 bg-[#b1f128] hover:bg-[#a3d623] text-black font-semibold"
-                      >
-                        {isWithdrawing ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Processing...
-                          </>
-                        ) : (
-                          "Withdraw Fees"
-                        )}
-                      </Button>
+                    <div className="space-y-2">
+                      <Label htmlFor="wallet-sol">
+                        Solana Wallet
+                      </Label>
+                      <Input
+                        id="wallet-sol"
+                        placeholder="Solana wallet address"
+                        value={walletSol}
+                        onChange={(e) => setWalletSol(e.target.value)}
+                        className="font-mono text-sm"
+                      />
+                    </div>
 
-                      <Button
-                        variant="outline"
-                        onClick={() => setWithdrawalAddress("")}
-                        disabled={!withdrawalAddress.trim()}
-                      >
-                        Clear
-                      </Button>
+                    <div className="space-y-2">
+                      <Label htmlFor="wallet-tron">
+                        Tron Wallet
+                      </Label>
+                      <Input
+                        id="wallet-tron"
+                        placeholder="T..."
+                        value={walletTron}
+                        onChange={(e) => setWalletTron(e.target.value)}
+                        className="font-mono text-sm"
+                      />
                     </div>
                   </div>
+
+                  <Button
+                    onClick={handleSaveWalletAddresses}
+                    disabled={isSavingWallets || isLoadingWallets}
+                    className="bg-[#b1f128] text-black hover:bg-[#b1f128]/90"
+                  >
+                    {isSavingWallets ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      "Save Wallet Addresses"
+                    )}
+                  </Button>
                 </CardContent>
               </Card>
-            </div>
-          )}
-
-          {activeTab === "withdrawal-history" && (
-            <div className="mb-8">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <div>
-                  <h1 className="text-3xl font-bold text-foreground mb-2">
-                    Withdrawal History
-                  </h1>
-                  <p className="text-muted-foreground">
-                    History of fee withdrawals by admins
-                  </p>
-                </div>
-                <Button
-                  onClick={fetchWithdrawalHistory}
-                  disabled={loadingHistory}
-                  variant="outline"
-                  className="flex items-center gap-2"
-                >
-                  <RefreshCw
-                    className={cn("w-4 h-4", loadingHistory && "animate-spin")}
-                  />
-                  Refresh Table
-                </Button>
-              </div>
-
-              {loadingHistory ? (
-                <div className="flex gap-2 justify-center items-center py-8">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Loading
-                  history...
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {withdrawalHistory.length === 0 ? (
-                    <Card className="bg-white/50 dark:bg-gray-900/50 backdrop-blur border-black/10 dark:border-white/10 shadow-xl text-black dark:text-white">
-                      <CardContent className="p-8 text-center">
-                        <div className="text-muted-foreground">
-                          No withdrawal records found.
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <div className="overflow-x-auto rounded-xl border border-black/10 dark:border-white/10">
-                      <table className="min-w-full border-collapse text-sm">
-                        <thead className="bg-gray-100 dark:bg-gray-900 text-left">
-                          <tr>
-                            {[
-                              "Date",
-                              "Admin",
-                              "Asset",
-                              "Amount",
-                              "Status",
-                              "Wallet Address",
-                              "TX Hash",
-                            ].map((h) => (
-                              <th
-                                key={h}
-                                className="px-3 py-3 font-semibold border-b border-black/10 dark:border-white/10 whitespace-nowrap"
-                              >
-                                {h}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {withdrawalHistory.map((w) => (
-                            <tr
-                              key={w._id}
-                              className="border-b border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 align-top"
-                            >
-                              <td className="px-3 py-3 whitespace-nowrap">
-                                {formatDate(w.createdAt)}
-                              </td>
-                              <td className="px-3 py-3">
-                                <div className="flex flex-col">
-                                  <span className="font-medium">
-                                    {w.admin?.nickName || "Unknown Admin"}
-                                  </span>
-                                  <span className="text-xs text-muted-foreground">
-                                    {w.admin?.email}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="px-3 py-3 uppercase font-semibold">
-                                {w.asset?.split(":")[1] || w.asset}
-                                <div className="text-[10px] text-muted-foreground font-normal">
-                                  {w.asset?.split(":")[0]} network
-                                </div>
-                              </td>
-                              <td className="px-3 py-3 font-bold">
-                                {w.amount?.toLocaleString(undefined, {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}{" "}
-                                {w.currency}
-                              </td>
-                              <td className="px-3 py-3">
-                                <Badge
-                                  className={cn(
-                                    "border-0 capitalize",
-                                    w.status?.toLowerCase() === "completed"
-                                      ? "bg-green-100 text-green-600 hover:bg-green-100"
-                                      : w.status?.toLowerCase() === "pending"
-                                        ? "bg-yellow-100 text-yellow-600 hover:bg-yellow-100"
-                                        : w.status?.toLowerCase() === "blocked"
-                                          ? "bg-red-100 text-red-600 hover:bg-red-100"
-                                          : "bg-red-100 text-red-600 hover:bg-red-100",
-                                  )}
-                                >
-                                  {w.status?.toLowerCase()}
-                                </Badge>
-                                {w.errorMessage && (
-                                  <p className="text-[10px] text-red-500 mt-1 max-w-[150px] truncate">
-                                    {w.errorMessage}
-                                  </p>
-                                )}
-                              </td>
-                              <td className="px-3 py-3 break-all font-mono text-xs max-w-[200px]">
-                                {w.walletAddress}
-                                <CopyBtn value={w.walletAddress} />
-                              </td>
-                              <td className="px-3 py-3 break-all font-mono text-xs max-w-[200px]">
-                                {w.transactionHash ? (
-                                  <div className="flex flex-col gap-1">
-                                    <div className="flex items-center gap-1">
-                                      <span className="text-blue-600 dark:text-blue-400">
-                                        {w.transactionHash}
-                                      </span>
-                                      <CopyBtn value={w.transactionHash} />
-                                    </div>
-                                    {w.explorerUrl && (
-                                      <a
-                                        href={w.explorerUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-[10px] text-blue-500 hover:underline"
-                                      >
-                                        View Explorer →
-                                      </a>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-400 italic">
-                                    N/A
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           )}
 
@@ -1442,66 +1060,6 @@ const Dashboard = () => {
                 </>
               ) : (
                 "Confirm Deposit"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={isWithdrawOpen} onOpenChange={setIsWithdrawOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm Fee Withdrawal</DialogTitle>
-            <DialogDescription>
-              You're about to withdraw developer fees. Review the details below
-              and confirm to proceed.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            {developerFees && (
-              <div className="space-y-2">
-                <Label>Available Fees</Label>
-                <div className="bg-muted p-3 rounded">
-                  <div className="text-2xl font-bold">
-                    {developerFees.amount.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {developerFees.currency}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label>Asset</Label>
-              <div className="bg-muted p-2 rounded font-semibold">
-                {withdrawalAsset.toUpperCase()}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Beneficiary Wallet</Label>
-              <div className="font-mono text-xs break-all bg-muted p-2 rounded">
-                {withdrawalAddress || "(none)"}
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsWithdrawOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleConfirmWithdraw} disabled={isWithdrawing}>
-              {isWithdrawing ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Withdrawing...
-                </>
-              ) : (
-                "Confirm Withdrawal"
               )}
             </Button>
           </DialogFooter>
